@@ -27,6 +27,9 @@ reset_button_size = (100, 40)
 button_color = (0, 128, 0)  # Green button
 text_color = (255, 255, 255)  # White text
 
+# FPS Clock
+clock = pygame.time.Clock()
+
 # SECTION 3: AGENT INITIALIZATION
 # -------------------------------
 def reset_agents():
@@ -59,6 +62,10 @@ while running:
     # SECTION 5: DRAWING
     screen.fill((255, 255, 255))  # Clear the screen with a white background
 
+    # Calculate and display FPS
+    fps = clock.get_fps()
+    draw_text(screen, f"FPS: {int(fps)}", (10, 70), font, (0, 0, 0))  # Position and color can be adjusted
+
     # Draw grid lines
     for x in range(0, SCREEN_WIDTH, SCREEN_WIDTH // GRID_COLS):
         pygame.draw.line(screen, (200, 200, 200), (x, 0), (x, SCREEN_HEIGHT))
@@ -76,11 +83,15 @@ while running:
     # Draw counters for predators and prey
     prey_count = len([agent for agent in agents if isinstance(agent, Prey)])
     predator_count = len([agent for agent in agents if isinstance(agent, Predator)])
-    draw_text(screen, f"Prey: {prey_count}", (10, 10), font)
-    draw_text(screen, f"Predators: {predator_count}", (10, 40), font)
-
+    draw_text(screen, f"Prey: {prey_count}", (10, 10), font, (0, 0, 0))  # Black color for text
+    draw_text(screen, f"Predators: {predator_count}", (10, 40), font, (0, 0, 0))
+    
     # Draw reset button
     draw_button(screen, "Reset", reset_button_pos, reset_button_size, button_font, button_color, text_color)
+ 
+    #Clock?
+    pygame.display.flip()
+    clock.tick(60)  # You can adjust this value based on desired FPS
 
     # SECTION 6: DISPLAY REFRESH
     pygame.display.flip()

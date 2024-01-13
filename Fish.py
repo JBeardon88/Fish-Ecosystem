@@ -5,7 +5,7 @@ import math
 # SECTION 1: CONFIGURABLE PARAMETERS
 # -----------------------------------
 GRID_COLS, GRID_ROWS = 20, 15  # Grid dimensions
-MAX_SPEED = 0.1
+MAX_SPEED = 0.5
 TURN_ANGLE = math.pi / 8  # 22.5 degrees in radians
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
@@ -60,6 +60,13 @@ class Agent:
         x1, y1 = self.position
         x2, y2 = other_agent.position
         return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    
+    def handle_collision(self, same_type_agents, collision_distance=5):
+        for other in same_type_agents:
+            if other != self and self._distance_to(other) < collision_distance:
+                # Simple collision response
+                self.direction += math.pi  # Reverse direction
+                self.move()  # Move away
 
 # SECTION 4: PREY CLASS
 # ---------------------
@@ -89,6 +96,8 @@ class Prey(Agent):
         else:
             self.reproduce(agent_list)
 
+        self.handle_collision([a for a in agent_list if isinstance(a, Prey)])  # Only check collision with other prey
+
     def reproduce(self, agent_list):
         if self.energy >= PREY_ENERGY_TO_REPRODUCE and self.reproduction_cooldown == 0:
             self.energy /= 2  # Energy is halved upon reproduction
@@ -113,7 +122,7 @@ class Predator(Agent):
         return angle_difference < math.pi / 4 and self._distance_to(prey) < 200  # FOV settings
 
     def update(self, agent_list, prey_list):
-        self.energy -= 0.1  # Energy depletion rate
+        self.energy -= 0.3  # Energy depletion rate
 
         visible_prey = [prey for prey in prey_list if self.is_within_fov(prey)]
         if visible_prey:
@@ -138,6 +147,8 @@ class Predator(Agent):
 
         if self.energy <= 0:
             agent_list.remove(self)
+
+        self.handle_collision([a for a in agent_list if isinstance(a, Predator)])  # Only check collision with other predators
 
     def reproduce(self, agent_list):
         self.energy /= 2  # Split energy with offspring
