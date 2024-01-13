@@ -1,5 +1,5 @@
 import pygame
-from Fish import Prey, Predator
+from Fish import Prey, Predator, update_agent_grid_cells
 from gui_utils import draw_text, draw_button, is_button_clicked  # Make sure to create gui_utils.py as per previous instructions
 
 # Constants
@@ -33,7 +33,7 @@ clock = pygame.time.Clock()
 # SECTION 3: AGENT INITIALIZATION
 # -------------------------------
 def reset_agents():
-    return [Prey() for _ in range(10)] + [Predator() for _ in range(20)]
+    return [Prey() for _ in range(10)] + [Predator() for _ in range(10)]
 
 agents = reset_agents()
 
@@ -53,11 +53,15 @@ while running:
     predators = [agent for agent in agents if isinstance(agent, Predator)]
     prey = [agent for agent in agents if isinstance(agent, Prey)]
 
+    # Update the grid for the current frame
+    grid = update_agent_grid_cells(agents)
+
     for agent in agents[:]:
         if isinstance(agent, Prey):
-            agent.update(agents, predators)
+            agent.update(agents, predators, grid)  # Pass the grid
         elif isinstance(agent, Predator):
-            agent.update(agents, prey)
+            agent.update(agents, prey, grid)       # Pass the grid
+
 
     # SECTION 5: DRAWING
     screen.fill((255, 255, 255))  # Clear the screen with a white background

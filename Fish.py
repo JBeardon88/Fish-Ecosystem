@@ -12,7 +12,7 @@ SCREEN_HEIGHT = 600
 PREY_ENERGY_GAIN = 1
 PREDATOR_ENERGY_GAIN = 4
 ENERGY_TO_REPRODUCE = 800
-PREY_ENERGY_TO_REPRODUCE = 400  # Adjust this value as needed
+PREY_ENERGY_TO_REPRODUCE = 200  # Adjust this value as needed
 
 # SECTION 2: UTILITY FUNCTIONS
 # ----------------------------
@@ -21,6 +21,19 @@ def get_grid_cell(position):
     col = int(position[0] / col_width)
     row = int(position[1] / row_height)
     return col, row
+
+from collections import defaultdict
+
+def get_nearby_cells(cell):
+    x, y = cell
+    return [(x + dx, y + dy) for dx in range(-1, 2) for dy in range(-1, 2)]
+
+def update_agent_grid_cells(agent_list):
+    grid = defaultdict(list)
+    for agent in agent_list:
+        cell = get_grid_cell(agent.position)
+        grid[cell].append(agent)
+    return grid
 
 def random_position():
     return random.randrange(0, SCREEN_WIDTH), random.randrange(0, SCREEN_HEIGHT)
@@ -68,45 +81,81 @@ class Agent:
                 self.direction += math.pi  # Reverse direction
                 self.move()  # Move away
 
+    def handle_collision_efficiently(self, grid, collision_distance=5):
+        cell = get_grid_cell(self.position)
+        nearby_cells = get_nearby_cells(cell)
+
+        for nearby_cell in nearby_cells:
+            for other_agent in grid.get(nearby_cell, []):
+                if other_agent != self and self._distance_to(other_agent) < collision_distance:
+                    self.direction += math.pi
+                    self.move()
+
+
 # SECTION 4: PREY CLASS
 # ---------------------
 class Prey(Agent):
     def __init__(self):
         super().__init__()
-        self.reproduction_cooldown = 100  # Initialize cooldown for reproduction
+        self.reproduction_cooldown = 100
+        self.fleeing_energy_cost = 1  # Higher energy cost when fleeing
+        self.safe_energy_gain = 0.5   # Energy gain when moving safely
 
     def is_within_fov(self, predator):
-        return self._distance_to(predator) < 100  # FOV radius
+        """ Check if a predator is within the field of view. """
+        return self._distance_to(predator) < 100
 
-    def update(self, agent_list, predator_list):
+    def update(self, agent_list, predator_list, grid):
+        """ Update prey status each frame. """
         visible_predators = [pred for pred in predator_list if self.is_within_fov(pred)]
+
         if visible_predators:
+            # Fleeing from predator
             closest_predator = min(visible_predators, key=lambda p: self._distance_to(p))
             self.direction = math.atan2(self.position[1] - closest_predator.position[1],
                                         self.position[0] - closest_predator.position[0]) + math.pi
             self.velocity = MAX_SPEED
+            self.energy -= self.fleeing_energy_cost
         else:
-            self.velocity = 0
-            self.energy += PREY_ENERGY_GAIN
+            # Safe movement
+            self.velocity = MAX_SPEED / 2
+            self.energy += self.safe_energy_gain
+
+        # Ensure energy does not drop below zero
+        self.energy = max(self.energy, 0)
 
         self.move()
 
+        # Handle reproduction
         if self.reproduction_cooldown > 0:
             self.reproduction_cooldown -= 1
-        else:
+        elif self.energy >= PREY_ENERGY_TO_REPRODUCE:
             self.reproduce(agent_list)
 
-        self.handle_collision([a for a in agent_list if isinstance(a, Prey)])  # Only check collision with other prey
+        # Collision handling
+        self.handle_collision([a for a in agent_list if isinstance(a, Prey)])
+        self.handle_collision_efficiently(grid)
+
+    def is_in_deadlock(self, predator_list):
+        """ Check for deadlock situation. """
+        deadlock_radius = 50
+        for pred in predator_list:
+            if self._distance_to(pred) < deadlock_radius:
+                return True
+        return False
 
     def reproduce(self, agent_list):
-        if self.energy >= PREY_ENERGY_TO_REPRODUCE and self.reproduction_cooldown == 0:
-            self.energy /= 2  # Energy is halved upon reproduction
+        """ Handle reproduction process. """
+        if self.energy >= PREY_ENERGY_TO_REPRODUCE:
+            self.energy /= 2
             offspring = Prey()
-            offset = random.randint(-20, 20)  # Disperse offspring
+            offset = random.randint(-20, 20)
             offspring.position = (self.position[0] + offset, self.position[1] + offset)
             offspring.grid_cell = get_grid_cell(offspring.position)
             agent_list.append(offspring)
-            self.reproduction_cooldown = 100  # Reset cooldown period after reproducing
+            self.reproduction_cooldown = 100
+
+
 
 # SECTION 5: PREDATOR CLASS
 # -------------------------
@@ -115,14 +164,47 @@ class Predator(Agent):
         super().__init__()
         self.energy = 100  # Starting energy for predator
         self.reproduction_cooldown = 0  # Initialize reproduction cooldown
+        self.eating_cooldown = 0  # Cooldown after eating prey
+
+    def update(self, agent_list, prey_list, grid):
+        # Decrease cooldown each frame if it's active
+        if self.eating_cooldown > 0:
+            self.eating_cooldown -= 1
+            temp_speed = self.velocity / 2  # Temporary reduced speed during cooldown
+        else:
+            temp_speed = self.velocity  # Normal speed
+
+        visible_prey = [prey for prey in prey_list if self.is_within_fov(prey)]
+        if visible_prey:
+            closest_prey = min(visible_prey, key=lambda p: self._distance_to(p))
+            self.direction = math.atan2(closest_prey.position[1] - self.position[1],
+                                        closest_prey.position[0] - self.position[0])
+            if self._distance_to(closest_prey) < 5:
+                self.energy += PREDATOR_ENERGY_GAIN
+                prey_list.remove(closest_prey)
+                agent_list.remove(closest_prey) # Also remove from the main agent list
+                self.eating_cooldown = 30  # Set cooldown period (example: 30 frames)
+                print("Prey eaten:", closest_prey)  # Debugging statement
+
+        # Move predator using the temporary speed
+        dx = math.cos(self.direction) * temp_speed
+        dy = math.sin(self.direction) * temp_speed
+        self.position = ((self.position[0] + dx) % SCREEN_WIDTH, 
+                         (self.position[1] + dy) % SCREEN_HEIGHT)
+        self.grid_cell = get_grid_cell(self.position)
+
+    def angle_diff(self, angle1, angle2):
+        diff = abs(angle1 - angle2) % (2 * math.pi)
+        return min(diff, 2 * math.pi - diff)
+
     def is_within_fov(self, prey):
         angle_to_prey = math.atan2(prey.position[1] - self.position[1],
-                                prey.position[0] - self.position[0])
-        angle_difference = abs(self.direction - angle_to_prey)
+                                   prey.position[0] - self.position[0])
+        angle_difference = self.angle_diff(self.direction, angle_to_prey)
         return angle_difference < math.pi / 4 and self._distance_to(prey) < 200  # FOV settings
 
-    def update(self, agent_list, prey_list):
-        self.energy -= 0.3  # Energy depletion rate
+    def update(self, agent_list, prey_list, grid):
+        self.energy -= 0.5  # Energy depletion rate
 
         visible_prey = [prey for prey in prey_list if self.is_within_fov(prey)]
         if visible_prey:
@@ -149,7 +231,7 @@ class Predator(Agent):
             agent_list.remove(self)
 
         self.handle_collision([a for a in agent_list if isinstance(a, Predator)])  # Only check collision with other predators
-
+        self.handle_collision_efficiently(grid)
     def reproduce(self, agent_list):
         self.energy /= 2  # Split energy with offspring
         offspring = Predator()
