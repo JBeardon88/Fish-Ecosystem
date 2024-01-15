@@ -10,9 +10,9 @@ TURN_ANGLE = math.pi / 8  # 22.5 degrees in radians
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 PREY_ENERGY_GAIN = 1
-PREDATOR_ENERGY_GAIN = 4
-ENERGY_TO_REPRODUCE = 800
-PREY_ENERGY_TO_REPRODUCE = 200  # Adjust this value as needed
+PREDATOR_ENERGY_GAIN = 25
+ENERGY_TO_REPRODUCE = 200
+PREY_ENERGY_TO_REPRODUCE = 300  # Adjust this value as needed
 
 # SECTION 2: UTILITY FUNCTIONS
 # ----------------------------
@@ -51,10 +51,24 @@ class Agent:
     def move(self):
         if self.velocity < MAX_SPEED:
             self.velocity += 0.1  # Gradually increase speed
+        
+        # Calculate the new position
         dx = math.cos(self.direction) * self.velocity
         dy = math.sin(self.direction) * self.velocity
-        self.position = (self.position[0] + dx) % SCREEN_WIDTH, (self.position[1] + dy) % SCREEN_HEIGHT
+        new_x = self.position[0] + dx
+        new_y = self.position[1] + dy
+
+        # Check for border collision
+        if new_x <= 0 or new_x >= SCREEN_WIDTH:
+            self.direction = math.pi - self.direction  # Reverse horizontal direction
+        if new_y <= 0 or new_y >= SCREEN_HEIGHT:
+            self.direction = -self.direction  # Reverse vertical direction
+
+        # Update position with border constraints
+        self.position = (max(0, min(SCREEN_WIDTH, new_x)), 
+                         max(0, min(SCREEN_HEIGHT, new_y)))
         self.grid_cell = get_grid_cell(self.position)
+
 
     def update(self):
         # To be overridden in subclasses
@@ -167,6 +181,11 @@ class Predator(Agent):
         self.eating_cooldown = 0  # Cooldown after eating prey
 
     def update(self, agent_list, prey_list, grid):
+        # Energy depletion for moving
+        energy_before_move = self.energy
+        self.energy -= 0.3  # Energy depletion rate for moving
+       # print(f"[Predator Movement] Energy changed from {energy_before_move} to {self.energy} (-0.1 for moving)")
+
         # Decrease cooldown each frame if it's active
         if self.eating_cooldown > 0:
             self.eating_cooldown -= 1
@@ -179,42 +198,15 @@ class Predator(Agent):
             closest_prey = min(visible_prey, key=lambda p: self._distance_to(p))
             self.direction = math.atan2(closest_prey.position[1] - self.position[1],
                                         closest_prey.position[0] - self.position[0])
-            if self._distance_to(closest_prey) < 5:
-                self.energy += PREDATOR_ENERGY_GAIN
-                prey_list.remove(closest_prey)
-                agent_list.remove(closest_prey) # Also remove from the main agent list
-                self.eating_cooldown = 30  # Set cooldown period (example: 30 frames)
-                print("Prey eaten:", closest_prey)  # Debugging statement
 
-        # Move predator using the temporary speed
-        dx = math.cos(self.direction) * temp_speed
-        dy = math.sin(self.direction) * temp_speed
-        self.position = ((self.position[0] + dx) % SCREEN_WIDTH, 
-                         (self.position[1] + dy) % SCREEN_HEIGHT)
-        self.grid_cell = get_grid_cell(self.position)
-
-    def angle_diff(self, angle1, angle2):
-        diff = abs(angle1 - angle2) % (2 * math.pi)
-        return min(diff, 2 * math.pi - diff)
-
-    def is_within_fov(self, prey):
-        angle_to_prey = math.atan2(prey.position[1] - self.position[1],
-                                   prey.position[0] - self.position[0])
-        angle_difference = self.angle_diff(self.direction, angle_to_prey)
-        return angle_difference < math.pi / 4 and self._distance_to(prey) < 200  # FOV settings
-
-    def update(self, agent_list, prey_list, grid):
-        self.energy -= 0.5  # Energy depletion rate
-
-        visible_prey = [prey for prey in prey_list if self.is_within_fov(prey)]
-        if visible_prey:
-            closest_prey = min(visible_prey, key=lambda p: self._distance_to(p))
-            self.direction = math.atan2(closest_prey.position[1] - self.position[1],
-                                        closest_prey.position[0] - self.position[0])
-            self.velocity = MAX_SPEED
             if self._distance_to(closest_prey) < 20:
+                energy_before_eating = self.energy  # Store the energy level before eating
                 self.energy += PREDATOR_ENERGY_GAIN
+               # print(f"[Predator Eating] Energy changed from {energy_before_eating} to {self.energy} (+{PREDATOR_ENERGY_GAIN} for eating)")
                 prey_list.remove(closest_prey)
+                agent_list.remove(closest_prey)  # Also remove from the main agent list
+                self.eating_cooldown = 30  # Set cooldown period
+               # print("Prey eaten:", closest_prey)  # Debugging statement
         else:
             if random.random() < 0.05:  # 5% chance to change direction
                 self.direction += random.choice([-1, 1]) * TURN_ANGLE
@@ -232,10 +224,23 @@ class Predator(Agent):
 
         self.handle_collision([a for a in agent_list if isinstance(a, Predator)])  # Only check collision with other predators
         self.handle_collision_efficiently(grid)
+
+    def angle_diff(self, angle1, angle2):
+        # Calculate the difference between two angles
+        diff = abs(angle1 - angle2) % (2 * math.pi)
+        return min(diff, 2 * math.pi - diff)
+
+    def is_within_fov(self, prey):
+        # Check if a prey is within the field of view of the predator
+        angle_to_prey = math.atan2(prey.position[1] - self.position[1], prey.position[0] - self.position[0])
+        angle_difference = self.angle_diff(self.direction, angle_to_prey)
+        return angle_difference < math.pi / 4 and self._distance_to(prey) < 200  # FOV settings
+
     def reproduce(self, agent_list):
+        # Handle the reproduction process
         self.energy /= 2  # Split energy with offspring
         offspring = Predator()
-        
+
         # Spawn the offspring close to the parent
         offset_x = random.randint(-10, 10)  # Small random offset
         offset_y = random.randint(-10, 10)
@@ -247,4 +252,4 @@ class Predator(Agent):
         # Reset reproduction cooldown
         self.reproduction_cooldown = 100  # Set cooldown duration
 
-    
+

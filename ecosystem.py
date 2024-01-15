@@ -33,7 +33,7 @@ clock = pygame.time.Clock()
 # SECTION 3: AGENT INITIALIZATION
 # -------------------------------
 def reset_agents():
-    return [Prey() for _ in range(10)] + [Predator() for _ in range(10)]
+    return [Prey() for _ in range(30)] + [Predator() for _ in range(5)]
 
 agents = reset_agents()
 
