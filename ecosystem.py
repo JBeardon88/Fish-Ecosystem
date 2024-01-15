@@ -1,5 +1,5 @@
 import pygame
-from Fish import Prey, Predator, update_agent_grid_cells
+from Fish import ENERGY_TO_REPRODUCE, Prey, Predator, update_agent_grid_cells
 from gui_utils import draw_text, draw_button, is_button_clicked  # Make sure to create gui_utils.py as per previous instructions
 
 # Constants
@@ -33,9 +33,30 @@ clock = pygame.time.Clock()
 # SECTION 3: AGENT INITIALIZATION
 # -------------------------------
 def reset_agents():
-    return [Prey() for _ in range(30)] + [Predator() for _ in range(5)]
+    return [Prey() for _ in range(50)] + [Predator() for _ in range(10)]
 
 agents = reset_agents()
+
+# FUZZY CIRCLES
+def draw_fuzzy_circle(surface, color, position, radius):
+    x, y = position
+    temp_surface = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
+    for i in range(radius, 0, -1):
+        alpha = int(255 * (1 - i / radius))
+        pygame.draw.circle(temp_surface, color + (alpha,), (radius, radius), i)
+    surface.blit(temp_surface, (x - radius, y - radius))
+
+# Function to interpolate between two colors
+def lerp_color(color1, color2, factor):
+    return (
+        int(color1[0] + (color2[0] - color1[0]) * factor),
+        int(color1[1] + (color2[1] - color1[1]) * factor),
+        int(color1[2] + (color2[2] - color1[2]) * factor)
+    )
+
+
+# for fuzzy colors to work
+max_energy = ENERGY_TO_REPRODUCE 
 
 # SECTION 4: MAIN GAME LOOP
 # -------------------------
@@ -76,13 +97,19 @@ while running:
     for y in range(0, SCREEN_HEIGHT, SCREEN_HEIGHT // GRID_ROWS):
         pygame.draw.line(screen, (200, 200, 200), (0, y), (SCREEN_WIDTH, y))
 
-    # Draw agents
+    # DRAW AGENTS - FUZZY CIRCLES AND EMOTIONS
+
     for agent in agents:
         if isinstance(agent, Prey):
             color = (0, 255, 0)  # Green for prey
-        else:
-            color = (255, 0, 0)  # Red for predator
-        pygame.draw.circle(screen, color, (int(agent.position[0]), int(agent.position[1])), 5)
+            draw_fuzzy_circle(screen, color, agent.position, 5)
+        elif isinstance(agent, Predator):
+            # Interpolate color based on energy
+            low_energy_color = (255, 0, 0)  # Red for low energy
+            high_energy_color = (0, 0, 255)  # Blue for high energy
+            energy_factor = max(0, min(1, agent.energy / max_energy))
+            color = lerp_color(low_energy_color, high_energy_color, energy_factor)
+            draw_fuzzy_circle(screen, color, agent.position, 5)
 
     # Draw counters for predators and prey
     prey_count = len([agent for agent in agents if isinstance(agent, Prey)])

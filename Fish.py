@@ -11,7 +11,7 @@ SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 PREY_ENERGY_GAIN = 1
 PREDATOR_ENERGY_GAIN = 25
-ENERGY_TO_REPRODUCE = 200
+ENERGY_TO_REPRODUCE = 400
 PREY_ENERGY_TO_REPRODUCE = 300  # Adjust this value as needed
 
 # SECTION 2: UTILITY FUNCTIONS
@@ -120,8 +120,11 @@ class Prey(Agent):
         return self._distance_to(predator) < 100
 
     def update(self, agent_list, predator_list, grid):
-        """ Update prey status each frame. """
-        visible_predators = [pred for pred in predator_list if self.is_within_fov(pred)]
+        # Retrieve nearby predators using spatial partitioning
+        current_cell = get_grid_cell(self.position)
+        nearby_cells = get_nearby_cells(current_cell)
+        nearby_predators = [pred for cell in nearby_cells for pred in grid.get(cell, []) if isinstance(pred, Predator)]
+        visible_predators = [pred for pred in nearby_predators if self.is_within_fov(pred)]
 
         if visible_predators:
             # Fleeing from predator
@@ -183,30 +186,40 @@ class Predator(Agent):
     def update(self, agent_list, prey_list, grid):
         # Energy depletion for moving
         energy_before_move = self.energy
-        self.energy -= 0.3  # Energy depletion rate for moving
-       # print(f"[Predator Movement] Energy changed from {energy_before_move} to {self.energy} (-0.1 for moving)")
+        self.energy -= 0.15  # Energy depletion rate for moving
 
-        # Decrease cooldown each frame if it's active
         if self.eating_cooldown > 0:
             self.eating_cooldown -= 1
             temp_speed = self.velocity / 2  # Temporary reduced speed during cooldown
         else:
             temp_speed = self.velocity  # Normal speed
 
-        visible_prey = [prey for prey in prey_list if self.is_within_fov(prey)]
+        # Optimized retrieval of nearby prey
+        current_cell = get_grid_cell(self.position)
+        nearby_cells = get_nearby_cells(current_cell)
+        nearby_prey = []
+        for cell in nearby_cells:
+            if cell in grid:
+                for prey in grid[cell]:
+                    if isinstance(prey, Prey):
+                        nearby_prey.append(prey)
+
+        visible_prey = [prey for prey in nearby_prey if self.is_within_fov(prey)]
         if visible_prey:
             closest_prey = min(visible_prey, key=lambda p: self._distance_to(p))
             self.direction = math.atan2(closest_prey.position[1] - self.position[1],
                                         closest_prey.position[0] - self.position[0])
 
             if self._distance_to(closest_prey) < 20:
-                energy_before_eating = self.energy  # Store the energy level before eating
+                energy_before_eating = self.energy
                 self.energy += PREDATOR_ENERGY_GAIN
-               # print(f"[Predator Eating] Energy changed from {energy_before_eating} to {self.energy} (+{PREDATOR_ENERGY_GAIN} for eating)")
-                prey_list.remove(closest_prey)
-                agent_list.remove(closest_prey)  # Also remove from the main agent list
-                self.eating_cooldown = 30  # Set cooldown period
-               # print("Prey eaten:", closest_prey)  # Debugging statement
+
+                # Check if the prey is still in the list before removing
+                if closest_prey in prey_list:
+                    prey_list.remove(closest_prey)
+                    agent_list.remove(closest_prey)
+                
+                self.eating_cooldown = 30
         else:
             if random.random() < 0.05:  # 5% chance to change direction
                 self.direction += random.choice([-1, 1]) * TURN_ANGLE
