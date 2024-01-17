@@ -13,8 +13,8 @@ TURN_ANGLE = math.pi / 8  # 22.5 degrees in radians
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 PREY_ENERGY_GAIN = 200
-PREDATOR_ENERGY_GAIN = 50
-ENERGY_TO_REPRODUCE = 400
+PREDATOR_ENERGY_GAIN = 150
+ENERGY_TO_REPRODUCE = 1600
 PREY_ENERGY_TO_REPRODUCE = 200  # Adjust this value as needed
 MAX_ENERGY = 400
 
@@ -41,16 +41,39 @@ def get_grid_cell(position):
 
 from collections import defaultdict
 
-def get_nearby_cells(cell):
-    x, y = cell
-    return [(x + dx, y + dy) for dx in range(-1, 2) for dy in range(-1, 2)]
+# EFFICIENT GRID USE APPARENTLY
 
-def update_agent_grid_cells(agent_list):
+def update_agent_grid_cells(agent_list, grid_cols, grid_rows, screen_width, screen_height):
     grid = defaultdict(list)
+    col_width, row_height = screen_width / grid_cols, screen_height / grid_rows
+
     for agent in agent_list:
-        cell = get_grid_cell(agent.position)
-        grid[cell].append(agent)
+        col = int(agent.position[0] / col_width)
+        row = int(agent.position[1] / row_height)
+        new_cell = (col, row)
+
+        # Update grid cell only if it has changed
+        if new_cell != agent.grid_cell:
+            agent.grid_cell = new_cell
+        grid[new_cell].append(agent)
+
     return grid
+
+def get_nearby_cells(cell, grid_cols, grid_rows):
+    x, y = cell
+    neighbors = [(x + dx, y + dy) for dx in range(-1, 2) for dy in range(-1, 2)]
+    # Filter out cells that are outside the grid
+    return [(nx, ny) for nx, ny in neighbors if 0 <= nx < grid_cols and 0 <= ny < grid_rows]
+
+def handle_collision_efficiently(agent, grid, grid_cols, grid_rows, collision_distance=5):
+    nearby_cells = get_nearby_cells(agent.grid_cell, grid_cols, grid_rows)
+
+    for nearby_cell in nearby_cells:
+        for other_agent in grid.get(nearby_cell, []):
+            if other_agent != agent and agent._distance_to(other_agent) < collision_distance:
+                agent.direction += math.pi
+                agent.move()
+
 
 def random_position():
     return random.randrange(0, SCREEN_WIDTH), random.randrange(0, SCREEN_HEIGHT)
@@ -64,6 +87,9 @@ class Agent:
         self.velocity = random.uniform(0, MAX_SPEED)
         self.direction = random.uniform(0, 2 * math.pi)
         self.grid_cell = get_grid_cell(self.position)
+
+
+    # GET YOUR BODY MOVING ON THE FLOOR TONIGHT (aw yeah)
 
     def move(self):
         if self.velocity < MAX_SPEED:
@@ -85,6 +111,7 @@ class Agent:
         self.position = (max(0, min(SCREEN_WIDTH, new_x)), 
                          max(0, min(SCREEN_HEIGHT, new_y)))
         self.grid_cell = get_grid_cell(self.position)
+
 
 
     def update(self):
@@ -117,9 +144,10 @@ class Agent:
                 self.direction += math.pi  # Reverse direction
                 self.move()  # Move away
 
-    def handle_collision_efficiently(self, grid, collision_distance=5):
+    def handle_collision_efficiently(self, grid, grid_cols, grid_rows, collision_distance=5):
+        # The method implementation...
         cell = get_grid_cell(self.position)
-        nearby_cells = get_nearby_cells(cell)
+        nearby_cells = get_nearby_cells(cell, grid_cols, grid_rows)  # Updated to include grid_cols and grid_rows
 
         for nearby_cell in nearby_cells:
             for other_agent in grid.get(nearby_cell, []):
@@ -158,10 +186,10 @@ class Prey(Agent):
 
         return (distance, angle)
 
-    def update(self, agent_list, predator_list, grid):
+    def update(self, agent_list, predator_list, grid, grid_cols, grid_rows):
         # Retrieve nearby predators using spatial partitioning
-        current_cell = get_grid_cell(self.position)
-        nearby_cells = get_nearby_cells(current_cell)
+        current_cell = self.grid_cell  # or however you get the current cell
+        nearby_cells = get_nearby_cells(current_cell, GRID_COLS, GRID_ROWS)
         nearby_predators = [pred for cell in nearby_cells for pred in grid.get(cell, []) if isinstance(pred, Predator)]
 
         # This will assign the first two values returned from get_nearest_predator_info to distance and angle
@@ -200,7 +228,7 @@ class Prey(Agent):
 
         # Collision handling
         self.handle_collision([a for a in agent_list if isinstance(a, Prey)])
-        self.handle_collision_efficiently(grid)
+        self.handle_collision_efficiently(grid, grid_cols, grid_rows)
 
     def is_in_deadlock(self, predator_list):
         """ Check for deadlock situation. """
@@ -248,10 +276,10 @@ class Predator(Agent):
 
         return (distance, angle)
 
-    def update(self, agent_list, prey_list, grid):
+    def update(self, agent_list, prey_list, grid, grid_cols, grid_rows):
         # Optimized retrieval of nearby prey
-        current_cell = get_grid_cell(self.position)
-        nearby_cells = get_nearby_cells(current_cell)
+        current_cell = self.grid_cell  # or however you get the current cell
+        nearby_cells = get_nearby_cells(current_cell, GRID_COLS, GRID_ROWS)
         nearby_prey = [prey for cell in nearby_cells for prey in grid.get(cell, []) if isinstance(prey, Prey)]
 
         # Get the nearest prey information
@@ -285,7 +313,7 @@ class Predator(Agent):
                 self.eating_cooldown = 30
 
         # Movement and energy depletion
-        self.energy -= 0.3  # Energy depletion rate for moving
+        self.energy -= 0.35  # Energy depletion rate for moving
         self.energy = max(self.energy, 0)  # Prevent negative energy
         self.move()
 
@@ -303,7 +331,7 @@ class Predator(Agent):
 
         # Collision handling
         self.handle_collision([a for a in agent_list if isinstance(a, Predator)])
-        self.handle_collision_efficiently(grid)
+        self.handle_collision_efficiently(grid, grid_cols, grid_rows)
 
     def reproduce(self, agent_list):
         """ Handle reproduction process. """

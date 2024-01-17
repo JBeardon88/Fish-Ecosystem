@@ -75,14 +75,15 @@ while running:
     prey = [agent for agent in agents if isinstance(agent, Prey)]
 
     # Update the grid for the current frame
-    grid = update_agent_grid_cells(agents)
+    grid = update_agent_grid_cells(agents, GRID_COLS, GRID_ROWS, SCREEN_WIDTH, SCREEN_HEIGHT)
+
+    # Inside the main game loop in ecosystem.py
 
     for agent in agents[:]:
         if isinstance(agent, Prey):
-            agent.update(agents, predators, grid)  # Pass the grid
+            agent.update(agents, predators, grid, GRID_COLS, GRID_ROWS)  # Pass GRID_COLS and GRID_ROWS
         elif isinstance(agent, Predator):
-            agent.update(agents, prey, grid)       # Pass the grid
-
+            agent.update(agents, prey, grid, GRID_COLS, GRID_ROWS)       # Pass GRID_COLS and GRID_ROWS
 
     # SECTION 5: DRAWING
     screen.fill((255, 255, 255))  # Clear the screen with a white background
