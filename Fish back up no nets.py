@@ -1,35 +1,18 @@
 import pygame
 import random
 import math
-from neural_class import NeuralNetwork
-import copy
-
 
 # SECTION 1: CONFIGURABLE PARAMETERS
 # -----------------------------------
 GRID_COLS, GRID_ROWS = 20, 15  # Grid dimensions
-MAX_SPEED = 1
+MAX_SPEED = 0.5
 TURN_ANGLE = math.pi / 8  # 22.5 degrees in radians
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
-PREY_ENERGY_GAIN = 200
-PREDATOR_ENERGY_GAIN = 50
-ENERGY_TO_REPRODUCE = 400
+PREY_ENERGY_GAIN = 1
+PREDATOR_ENERGY_GAIN = 30
+ENERGY_TO_REPRODUCE = 200
 PREY_ENERGY_TO_REPRODUCE = 200  # Adjust this value as needed
-MAX_ENERGY = 400
-
-
-## Defining sight range for prey at half a grid square
-# Calculate the dimensions of a grid square
-grid_square_width = SCREEN_WIDTH / GRID_COLS
-grid_square_height = SCREEN_HEIGHT / GRID_ROWS
-
-# Calculate the diagonal of a grid square (using Pythagoras' theorem)
-grid_square_diagonal = math.sqrt(grid_square_width**2 + grid_square_height**2)
-
-# Set MAX_DISTANCE to half the diagonal length of a grid square
-MAX_DISTANCE = grid_square_diagonal
-
 
 # SECTION 2: UTILITY FUNCTIONS
 # ----------------------------
@@ -100,11 +83,6 @@ class Agent:
             offspring.grid_cell = get_grid_cell(offspring.position)
             agent_list.append(offspring)
 
-    def angle_diff(self, angle1, angle2):
-        # Calculate the difference between two angles
-        diff = abs(angle1 - angle2) % (2 * math.pi)
-        return min(diff, 2 * math.pi - diff)
-     
     def _distance_to(self, other_agent):
         x1, y1 = self.position
         x2, y2 = other_agent.position
@@ -133,60 +111,33 @@ class Agent:
 class Prey(Agent):
     def __init__(self):
         super().__init__()
-        self.nn = NeuralNetwork(input_size=3, hidden_size=5, output_size=2)  # Example sizes
         self.reproduction_cooldown = 100
         self.fleeing_energy_cost = 0.5  # Higher energy cost when fleeing
         self.safe_energy_gain = 0.5   # Energy gain when moving safely
 
-    def get_nearest_predator_info(self, predator_list):
-        """
-        Find the nearest predator and calculate the relative distance and angle.
-        Returns a tuple (distance, angle) where distance is normalized between 0 and 1,
-        and angle is normalized between -1 and 1 (-1 being direct left, 1 being direct right).
-        """
-        if not predator_list:
-            return (1, 0)  # No predators in sight
-
-        # Find the closest predator
-        closest_predator = min(predator_list, key=lambda p: self._distance_to(p))
-        distance = self._distance_to(closest_predator) / MAX_DISTANCE  # Normalize distance
-        angle_to_predator = math.atan2(closest_predator.position[1] - self.position[1],
-                                       closest_predator.position[0] - self.position[0])
-        angle_diff = self.angle_diff(self.direction, angle_to_predator)
-        angle = angle_diff / math.pi  # Normalize angle
-
-
-        return (distance, angle)
+    def is_within_fov(self, predator):
+        """ Check if a predator is within the field of view. """
+        return self._distance_to(predator) < 100
 
     def update(self, agent_list, predator_list, grid):
         # Retrieve nearby predators using spatial partitioning
         current_cell = get_grid_cell(self.position)
         nearby_cells = get_nearby_cells(current_cell)
         nearby_predators = [pred for cell in nearby_cells for pred in grid.get(cell, []) if isinstance(pred, Predator)]
+        visible_predators = [pred for pred in nearby_predators if self.is_within_fov(pred)]
 
-        # This will assign the first two values returned from get_nearest_predator_info to distance and angle
-        # and the third value, self.energy, to energy.
-        distance, angle = self.get_nearest_predator_info(predator_list)
-        energy = self.energy
-
-        # Normalize inputs
-        normalized_inputs = [distance / MAX_DISTANCE, angle / math.pi, energy / MAX_ENERGY]
-
-        # Neural network makes decision
-        decision = self.nn.forward(normalized_inputs)
-
-        # Interpret decision (e.g., first output for direction, second for speed)
-        self.direction += decision[0] * TURN_ANGLE - TURN_ANGLE / 2  # Adjust direction
-        self.velocity = decision[1] * MAX_SPEED       
-
-        # Apply energy costs based on velocity and presence of predators
-        if nearby_predators:
-            # Prey is fleeing, apply fleeing energy cost
+        if visible_predators:
+            # Fleeing from predator
+            closest_predator = min(visible_predators, key=lambda p: self._distance_to(p))
+            self.direction = math.atan2(self.position[1] - closest_predator.position[1],
+                                        self.position[0] - closest_predator.position[0]) + math.pi
+            self.velocity = MAX_SPEED
             self.energy -= self.fleeing_energy_cost
         else:
-            # Prey is safe, apply energy gain for moving safely
-            self.energy += self.safe_energy_gain    
-            
+            # Safe movement
+            self.velocity = MAX_SPEED / 2
+            self.energy += self.safe_energy_gain
+
         # Ensure energy does not drop below zero
         self.energy = max(self.energy, 0)
 
@@ -215,8 +166,6 @@ class Prey(Agent):
         if self.energy >= PREY_ENERGY_TO_REPRODUCE:
             self.energy /= 2
             offspring = Prey()
-            offspring.nn = copy.deepcopy(self.nn)  # Deep copy parent's neural network
-            offspring.nn.mutate(rate=0.01)  # Small mutation rate
             offset = random.randint(-20, 20)
             offspring.position = (self.position[0] + offset, self.position[1] + offset)
             offspring.grid_cell = get_grid_cell(offspring.position)
@@ -230,46 +179,34 @@ class Prey(Agent):
 class Predator(Agent):
     def __init__(self):
         super().__init__()
-        self.nn = NeuralNetwork(input_size=3, hidden_size=5, output_size=2)  # Example sizes
         self.energy = 100  # Starting energy for predator
         self.reproduction_cooldown = 0  # Initialize reproduction cooldown
         self.eating_cooldown = 0  # Cooldown after eating prey
 
-    def get_nearest_prey_info(self, prey_list):
-        if not prey_list:
-            return (1, 0)  # No prey in sight
-
-        closest_prey = min(prey_list, key=lambda p: self._distance_to(p))
-        distance = self._distance_to(closest_prey) / MAX_DISTANCE  # Normalize distance
-        angle_to_prey = math.atan2(closest_prey.position[1] - self.position[1],
-                                   closest_prey.position[0] - self.position[0])
-        angle_diff = self.angle_diff(self.direction, angle_to_prey)
-        angle = angle_diff / math.pi  # Normalize angle
-
-        return (distance, angle)
-
     def update(self, agent_list, prey_list, grid):
+        # Energy depletion for moving
+        energy_before_move = self.energy
+        self.energy -= 0.3  # Energy depletion rate for moving
+
+        if self.eating_cooldown > 0:
+            self.eating_cooldown -= 1
+            temp_speed = self.velocity / 2  # Temporary reduced speed during cooldown
+        else:
+            temp_speed = self.velocity  # Normal speed
+
         # Optimized retrieval of nearby prey
         current_cell = get_grid_cell(self.position)
         nearby_cells = get_nearby_cells(current_cell)
-        nearby_prey = [prey for cell in nearby_cells for prey in grid.get(cell, []) if isinstance(prey, Prey)]
+        nearby_prey = []
+        for cell in nearby_cells:
+            if cell in grid:
+                for prey in grid[cell]:
+                    if isinstance(prey, Prey):
+                        nearby_prey.append(prey)
 
-        # Get the nearest prey information
-        distance, angle = self.get_nearest_prey_info(nearby_prey)
-        energy = self.energy
-
-        # Normalize inputs
-        normalized_inputs = [distance / MAX_DISTANCE, angle / math.pi, energy / MAX_ENERGY]
-
-        # Neural network makes decision
-        decision = self.nn.forward(normalized_inputs)
-
-        # Interpret decision (e.g., first output for direction, second for speed)
-        self.direction += decision[0] * TURN_ANGLE - TURN_ANGLE / 2  # Adjust direction
-        self.velocity = decision[1] * MAX_SPEED
-
-        if nearby_prey:
-            closest_prey = min(nearby_prey, key=lambda p: self._distance_to(p))
+        visible_prey = [prey for prey in nearby_prey if self.is_within_fov(prey)]
+        if visible_prey:
+            closest_prey = min(visible_prey, key=lambda p: self._distance_to(p))
             self.direction = math.atan2(closest_prey.position[1] - self.position[1],
                                         closest_prey.position[0] - self.position[0])
 
@@ -283,38 +220,49 @@ class Predator(Agent):
                     agent_list.remove(closest_prey)
                 
                 self.eating_cooldown = 30
+        else:
+            if random.random() < 0.05:  # 5% chance to change direction
+                self.direction += random.choice([-1, 1]) * TURN_ANGLE
 
-        # Movement and energy depletion
-        self.energy -= 0.3  # Energy depletion rate for moving
-        self.energy = max(self.energy, 0)  # Prevent negative energy
         self.move()
 
-        # Reproduction
         if self.energy >= ENERGY_TO_REPRODUCE and self.reproduction_cooldown <= 0:
             self.reproduce(agent_list)
 
-        # Cooldown
         if self.reproduction_cooldown > 0:
             self.reproduction_cooldown -= 1
 
-        # Death condition
         if self.energy <= 0:
             agent_list.remove(self)
 
-        # Collision handling
-        self.handle_collision([a for a in agent_list if isinstance(a, Predator)])
+        self.handle_collision([a for a in agent_list if isinstance(a, Predator)])  # Only check collision with other predators
         self.handle_collision_efficiently(grid)
 
+    def angle_diff(self, angle1, angle2):
+        # Calculate the difference between two angles
+        diff = abs(angle1 - angle2) % (2 * math.pi)
+        return min(diff, 2 * math.pi - diff)
+
+    def is_within_fov(self, prey):
+        # Check if a prey is within the field of view of the predator
+        angle_to_prey = math.atan2(prey.position[1] - self.position[1], prey.position[0] - self.position[0])
+        angle_difference = self.angle_diff(self.direction, angle_to_prey)
+        return angle_difference < math.pi / 4 and self._distance_to(prey) < 200  # FOV settings
+
     def reproduce(self, agent_list):
-        """ Handle reproduction process. """
-        if self.energy >= ENERGY_TO_REPRODUCE:
-            self.energy /= 2
-            offspring = Predator()
-            offspring.nn = copy.deepcopy(self.nn)  # Deep copy parent's neural network
-            offspring.nn.mutate(rate=0.01)  # Small mutation rate for offspring
-            offset = random.randint(-10, 10)
-            offspring.position = (self.position[0] + offset, self.position[1] + offset)
-            offspring.grid_cell = get_grid_cell(offspring.position)
-            agent_list.append(offspring)
-            self.reproduction_cooldown = 100  # Reset cooldown
- 
+        # Handle the reproduction process
+        self.energy /= 2  # Split energy with offspring
+        offspring = Predator()
+
+        # Spawn the offspring close to the parent
+        offset_x = random.randint(-10, 10)  # Small random offset
+        offset_y = random.randint(-10, 10)
+        offspring.position = (self.position[0] + offset_x, self.position[1] + offset_y)
+        offspring.grid_cell = get_grid_cell(offspring.position)
+
+        agent_list.append(offspring)
+
+        # Reset reproduction cooldown
+        self.reproduction_cooldown = 100  # Set cooldown duration
+
+
