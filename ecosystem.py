@@ -1,13 +1,24 @@
 import pygame
 from Fish import ENERGY_TO_REPRODUCE, Prey, Predator, update_agent_grid_cells
 from gui_utils import draw_text, draw_button, is_button_clicked  # Make sure to create gui_utils.py as per previous instructions
-import cProfile
+from Fish import ENERGY_TO_REPRODUCE, Prey, Predator, update_agent_grid_cells, GridSquare
+
 
 # Constants
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 GRID_COLS = 20
 GRID_ROWS = 15
+
+
+# Constants for GridSquare
+GRID_MAX_ENERGY = 50  # Maximum energy a grid square can hold
+GRID_REGEN_RATE = 1    # Rate at which energy regenerates in each square
+
+# Initialize the grid with GridSquares
+energy_grid = [[GridSquare(GRID_MAX_ENERGY, GRID_REGEN_RATE) for _ in range(GRID_ROWS)] for _ in range(GRID_COLS)]
+
+
 
 # SECTION 1: PYGAME INITIALIZATION
 # --------------------------------
@@ -55,9 +66,9 @@ def lerp_color(color1, color2, factor):
         int(color1[2] + (color2[2] - color1[2]) * factor)
     )
 
-
 # for fuzzy colors to work
 max_energy = ENERGY_TO_REPRODUCE 
+
 
 # SECTION 4: MAIN GAME LOOP
 # -------------------------
@@ -76,15 +87,19 @@ while running:
     prey = [agent for agent in agents if isinstance(agent, Prey)]
 
     # Update the grid for the current frame
-    grid = update_agent_grid_cells(agents, GRID_COLS, GRID_ROWS, SCREEN_WIDTH, SCREEN_HEIGHT)
+    spatial_grid = update_agent_grid_cells(agents, GRID_COLS, GRID_ROWS, SCREEN_WIDTH, SCREEN_HEIGHT)
 
     # Inside the main game loop in ecosystem.py
 
-    for agent in agents[:]:
+    # Inside the main game loop in ecosystem.py
+    for agent in agents:
         if isinstance(agent, Prey):
-            agent.update(agents, predators, grid, GRID_COLS, GRID_ROWS)  # Pass GRID_COLS and GRID_ROWS
+            agent.update(agents, predators, spatial_grid, energy_grid, GRID_COLS, GRID_ROWS)
         elif isinstance(agent, Predator):
-            agent.update(agents, prey, grid, GRID_COLS, GRID_ROWS)       # Pass GRID_COLS and GRID_ROWS
+            # If Predator update method doesn't use energy_grid, don't pass it
+            agent.update(agents, prey, spatial_grid, GRID_COLS, GRID_ROWS)
+
+
 
     # SECTION 5: DRAWING
     screen.fill((255, 255, 255))  # Clear the screen with a white background
@@ -99,6 +114,11 @@ while running:
     for y in range(0, SCREEN_HEIGHT, SCREEN_HEIGHT // GRID_ROWS):
         pygame.draw.line(screen, (200, 200, 200), (0, y), (SCREEN_WIDTH, y))
 
+     # Regenerate energy in each grid square
+    for row in energy_grid:
+        for cell in row:
+            cell.regenerate_energy()
+   
     # DRAW AGENTS - FUZZY CIRCLES AND EMOTIONS
 
     for agent in agents:
@@ -128,6 +148,7 @@ while running:
 
     # SECTION 6: DISPLAY REFRESH
     pygame.display.flip()
+
 
 
 # SECTION 7: QUIT PYGAME

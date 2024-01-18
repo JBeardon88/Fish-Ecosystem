@@ -6,6 +6,25 @@ import copy
 from functools import lru_cache
 
 
+
+# SECTION 0.5 - GRIDSQUARES! MAKING PREY EAT FOOD
+class GridSquare:
+    def __init__(self, max_energy, regen_rate):
+        self.max_energy = max_energy
+        self.current_energy = max_energy
+        self.regen_rate = regen_rate
+
+    def consume_energy(self, amount):
+        consumed = min(self.current_energy, amount)
+        self.current_energy -= consumed
+        return consumed
+
+    def regenerate_energy(self):
+        if self.current_energy < self.max_energy:
+            self.current_energy = min(self.max_energy, self.current_energy + self.regen_rate)
+
+
+
 # SECTION 1: CONFIGURABLE PARAMETERS
 # -----------------------------------
 GRID_COLS, GRID_ROWS = 20, 15  # Grid dimensions
@@ -16,8 +35,9 @@ SCREEN_HEIGHT = 600
 PREY_ENERGY_GAIN = 200
 PREDATOR_ENERGY_GAIN = 150
 ENERGY_TO_REPRODUCE = 1200
-PREY_ENERGY_TO_REPRODUCE = 400  # Adjust this value as needed
-MAX_ENERGY = 400
+PREY_ENERGY_TO_REPRODUCE = 800  # Adjust this value as needed
+MAX_ENERGY = 800
+
 
 
 ## Defining sight range for prey at half a grid square
@@ -32,13 +52,19 @@ grid_square_diagonal = math.sqrt(grid_square_width**2 + grid_square_height**2)
 MAX_DISTANCE = grid_square_diagonal
 
 
+
+
 # SECTION 2: UTILITY FUNCTIONS
 # ----------------------------
 def get_grid_cell(position):
     col_width, row_height = SCREEN_WIDTH / GRID_COLS, SCREEN_HEIGHT / GRID_ROWS
     col = int(position[0] / col_width)
     row = int(position[1] / row_height)
+    # Ensure that col and row are within the grid's range
+    col = max(0, min(col, GRID_COLS - 1))
+    row = max(0, min(row, GRID_ROWS - 1))
     return col, row
+
 
 from collections import defaultdict
 
@@ -191,11 +217,14 @@ class Prey(Agent):
 
         return (distance, angle)
 
-    def update(self, agent_list, predator_list, grid, grid_cols, grid_rows):
+    # In the Prey class
+    def update(self, agent_list, predator_list, spatial_grid, energy_grid, grid_cols, grid_rows):
         # Retrieve nearby predators using spatial partitioning
         current_cell = self.grid_cell  # or however you get the current cell
-        nearby_cells = get_nearby_cells(current_cell, GRID_COLS, GRID_ROWS)
-        nearby_predators = [pred for cell in nearby_cells for pred in grid.get(cell, []) if isinstance(pred, Predator)]
+        nearby_cells = get_nearby_cells(self.grid_cell, grid_cols, grid_rows)
+        nearby_predators = [pred for cell in nearby_cells for pred in spatial_grid.get(cell, []) if isinstance(pred, Predator)]
+
+        # ... rest of the update method ...
 
         # This will assign the first two values returned from get_nearest_predator_info to distance and angle
         # and the third value, self.energy, to energy.
@@ -212,18 +241,7 @@ class Prey(Agent):
         self.direction += decision[0] * TURN_ANGLE - TURN_ANGLE / 2  # Adjust direction
         self.velocity = decision[1] * MAX_SPEED       
 
-        # Apply energy costs based on velocity and presence of predators
-        if nearby_predators:
-            # Prey is fleeing, apply fleeing energy cost
-            self.energy -= self.fleeing_energy_cost
-        else:
-            # Prey is safe, apply energy gain for moving safely
-            self.energy += self.safe_energy_gain    
-            
-        # Ensure energy does not drop below zero
-        self.energy = max(self.energy, 0)
-
-        self.move()
+        self.move(energy_grid)
 
         # Handle reproduction
         if self.reproduction_cooldown > 0:
@@ -232,8 +250,9 @@ class Prey(Agent):
             self.reproduce(agent_list)
 
         # Collision handling
-        self.handle_collision([a for a in agent_list if isinstance(a, Prey)])
-        self.handle_collision_efficiently(grid, grid_cols, grid_rows)
+        self.handle_collision([a for a in agent_list if isinstance(a, Prey)], energy_grid)
+        self.handle_collision_efficiently(spatial_grid, grid_cols, grid_rows, energy_grid)
+
 
     def is_in_deadlock(self, predator_list):
         """ Check for deadlock situation. """
@@ -256,6 +275,34 @@ class Prey(Agent):
             agent_list.append(offspring)
             self.reproduction_cooldown = 100
 
+
+# GRID EATING SHENANINGANS WHERE THE PREY MUNCH OUT ENERGY FROM THE GRID
+
+    def move(self, energy_grid):
+        super().move()
+        col, row = get_grid_cell(self.position)
+        # Make sure col and row are within grid range
+        if 0 <= col < GRID_COLS and 0 <= row < GRID_ROWS:
+            self.energy += energy_grid[col][row].consume_energy(PREY_ENERGY_GAIN)
+        self.energy = min(self.energy, MAX_ENERGY)
+
+    # Move the grid arguments correctly? The robot made me do it. 
+    def handle_collision(self, same_type_agents, energy_grid, collision_distance=5):
+        for other in same_type_agents:
+            if other != self and self._distance_to(other) < collision_distance:
+                self.direction += math.pi  # Reverse direction
+                self.move(energy_grid)  # Pass energy_grid here
+
+    def handle_collision_efficiently(self, spatial_grid, grid_cols, grid_rows, energy_grid, collision_distance=5):
+        cell = get_grid_cell(self.position)
+        nearby_cells = get_nearby_cells(cell, grid_cols, grid_rows)
+
+        for nearby_cell in nearby_cells:
+            for other_agent in spatial_grid.get(nearby_cell, []):
+                if other_agent != self and self._distance_to(other_agent) < collision_distance:
+                    # Simple collision response: reverse direction and move
+                    self.direction += math.pi
+                    self.move(energy_grid)  # Move and consume energy from the grid
 
 
 # SECTION 5: PREDATOR CLASS
@@ -318,7 +365,7 @@ class Predator(Agent):
                 self.eating_cooldown = 30
 
         # Movement and energy depletion
-        self.energy -= 0.5  # Energy depletion rate for moving
+        self.energy -= 0.7  # Energy depletion rate for moving
         self.energy = max(self.energy, 0)  # Prevent negative energy
         self.move()
 
@@ -341,7 +388,7 @@ class Predator(Agent):
     def reproduce(self, agent_list):
         """ Handle reproduction process. """
         if self.energy >= ENERGY_TO_REPRODUCE:
-            self.energy /= 2
+            self.energy = 400
             offspring = Predator()
             offspring.nn = copy.deepcopy(self.nn)  # Deep copy parent's neural network
             offspring.nn.mutate(rate=0.01)  # Small mutation rate for offspring
