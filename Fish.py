@@ -3,6 +3,7 @@ import random
 import math
 from neural_class import NeuralNetwork
 import copy
+from functools import lru_cache
 
 
 # SECTION 1: CONFIGURABLE PARAMETERS
@@ -14,8 +15,8 @@ SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 PREY_ENERGY_GAIN = 200
 PREDATOR_ENERGY_GAIN = 150
-ENERGY_TO_REPRODUCE = 1600
-PREY_ENERGY_TO_REPRODUCE = 200  # Adjust this value as needed
+ENERGY_TO_REPRODUCE = 1200
+PREY_ENERGY_TO_REPRODUCE = 400  # Adjust this value as needed
 MAX_ENERGY = 400
 
 
@@ -132,10 +133,14 @@ class Agent:
         diff = abs(angle1 - angle2) % (2 * math.pi)
         return min(diff, 2 * math.pi - diff)
      
-    def _distance_to(self, other_agent):
-        x1, y1 = self.position
-        x2, y2 = other_agent.position
+    @staticmethod
+    @lru_cache(maxsize=1000)  # Adjust maxsize as needed
+    def calculate_distance(x1, y1, x2, y2):
         return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+    def _distance_to(self, other_agent):
+        return Agent.calculate_distance(self.position[0], self.position[1], 
+                                        other_agent.position[0], other_agent.position[1])
     
     def handle_collision(self, same_type_agents, collision_distance=5):
         for other in same_type_agents:
@@ -147,7 +152,7 @@ class Agent:
     def handle_collision_efficiently(self, grid, grid_cols, grid_rows, collision_distance=5):
         # The method implementation...
         cell = get_grid_cell(self.position)
-        nearby_cells = get_nearby_cells(cell, grid_cols, grid_rows)  # Updated to include grid_cols and grid_rows
+        nearby_cells = get_nearby_cells(cell, grid_cols, grid_rows)
 
         for nearby_cell in nearby_cells:
             for other_agent in grid.get(nearby_cell, []):
@@ -313,7 +318,7 @@ class Predator(Agent):
                 self.eating_cooldown = 30
 
         # Movement and energy depletion
-        self.energy -= 0.35  # Energy depletion rate for moving
+        self.energy -= 0.5  # Energy depletion rate for moving
         self.energy = max(self.energy, 0)  # Prevent negative energy
         self.move()
 

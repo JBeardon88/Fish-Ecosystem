@@ -1,6 +1,7 @@
 import pygame
 from Fish import ENERGY_TO_REPRODUCE, Prey, Predator, update_agent_grid_cells
 from gui_utils import draw_text, draw_button, is_button_clicked  # Make sure to create gui_utils.py as per previous instructions
+import cProfile
 
 # Constants
 SCREEN_WIDTH = 800
@@ -33,7 +34,7 @@ clock = pygame.time.Clock()
 # SECTION 3: AGENT INITIALIZATION
 # -------------------------------
 def reset_agents():
-    return [Prey() for _ in range(50)] + [Predator() for _ in range(10)]
+    return [Prey() for _ in range(70)] + [Predator() for _ in range(5)]
 
 agents = reset_agents()
 
@@ -120,13 +121,14 @@ while running:
     
     # Draw reset button
     draw_button(screen, "Reset", reset_button_pos, reset_button_size, button_font, button_color, text_color)
- 
+
     #Clock?
     pygame.display.flip()
     clock.tick(60)  # You can adjust this value based on desired FPS
 
     # SECTION 6: DISPLAY REFRESH
     pygame.display.flip()
+
 
 # SECTION 7: QUIT PYGAME
 pygame.quit()
