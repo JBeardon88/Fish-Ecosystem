@@ -13,23 +13,29 @@ def draw_text(screen, text, position, font, color=(255, 255, 255)):
     text_surface = font.render(text, True, color)
     screen.blit(text_surface, position)
 
-def draw_button(screen, text, position, size, font, button_color, text_color):
+def draw_button(screen, text, position, size, font, button_color, text_color, padding=10):
     """
-    Draws a button with text on the Pygame screen.
+    Draws a button with text on the Pygame screen, with added padding.
 
-    :param screen: Pygame screen where to draw
-    :param text: Text to be displayed on the button
-    :param position: Tuple (x, y) position of the button on the screen
-    :param size: Tuple (width, height) size of the button
-    :param font: Pygame font used for the text on the button
-    :param button_color: Color of the button
-    :param text_color: Color of the text on the button
+    :param padding: Padding around the text within the button.
     """
-    pygame.draw.rect(screen, button_color, (*position, *size))
+    # Calculate text surface with padding
     text_surface = font.render(text, True, text_color)
+    text_width_with_padding = text_surface.get_width() + 2 * padding
+    text_height_with_padding = text_surface.get_height() + 2 * padding
+    
+    # Adjust button size if text is too wide
+    if text_width_with_padding > size[0]:
+        size = (text_width_with_padding, size[1])
+    
+    # Draw button rectangle
+    pygame.draw.rect(screen, button_color, (*position, *size))
+    
+    # Blit the text surface onto the screen at the centered position
     text_x = position[0] + (size[0] - text_surface.get_width()) // 2
     text_y = position[1] + (size[1] - text_surface.get_height()) // 2
     screen.blit(text_surface, (text_x, text_y))
+
 
 def is_button_clicked(mouse_pos, button_pos, button_size):
     """

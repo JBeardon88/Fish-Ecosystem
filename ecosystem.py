@@ -12,8 +12,8 @@ GRID_ROWS = 15
 
 
 # Constants for GridSquare
-GRID_MAX_ENERGY = 50  # Maximum energy a grid square can hold
-GRID_REGEN_RATE = 1    # Rate at which energy regenerates in each square
+GRID_MAX_ENERGY = 25  # Maximum energy a grid square can hold
+GRID_REGEN_RATE = 0.5    # Rate at which energy regenerates in each square
 
 # Initialize the grid with GridSquares
 energy_grid = [[GridSquare(GRID_MAX_ENERGY, GRID_REGEN_RATE) for _ in range(GRID_ROWS)] for _ in range(GRID_COLS)]
@@ -34,13 +34,21 @@ font = pygame.font.SysFont(None, 36)  # For counters
 button_font = pygame.font.SysFont(None, 30)  # For buttons
 
 # Reset button properties
-reset_button_pos = (SCREEN_WIDTH - 110, 10)
-reset_button_size = (100, 40)
+reset_button_pos = (SCREEN_WIDTH - 220, 110)
+reset_button_size = (50, 20)
 button_color = (0, 128, 0)  # Green button
 text_color = (255, 255, 255)  # White text
 
 # FPS Clock
 clock = pygame.time.Clock()
+
+# SPAWN button properties
+spawn_pred_button_pos = (SCREEN_WIDTH - 220, 10)
+spawn_pred_button_size = (50, 20)
+spawn_prey_button_pos = (SCREEN_WIDTH - 220, 60)
+spawn_prey_button_size = (50, 20)
+
+
 
 # SECTION 3: AGENT INITIALIZATION
 # -------------------------------
@@ -69,18 +77,41 @@ def lerp_color(color1, color2, factor):
 # for fuzzy colors to work
 max_energy = ENERGY_TO_REPRODUCE 
 
+def spawn_prey(number, agent_list):
+    for _ in range(number):
+        new_prey = Prey()
+        agent_list.append(new_prey)
+
+def spawn_predators(number, agent_list):
+    for _ in range(number):
+        new_predator = Predator()
+        agent_list.append(new_predator)
+
 
 # SECTION 4: MAIN GAME LOOP
 # -------------------------
 running = True
+# Flags to track if the spawn buttons are currently pressed
+spawn_pred_pressed = False
+spawn_prey_pressed = False
+
 while running:
     # Handle events
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if is_button_clicked(event.pos, reset_button_pos, reset_button_size):
+            if is_button_clicked(event.pos, reset_button_pos, reset_button_size) and not spawn_pred_pressed and not spawn_prey_pressed:
                 agents = reset_agents()  # Reset the simulation
+            elif is_button_clicked(event.pos, spawn_pred_button_pos, spawn_pred_button_size) and not spawn_pred_pressed:
+                spawn_predators(5, agents)
+                spawn_pred_pressed = True
+            elif is_button_clicked(event.pos, spawn_prey_button_pos, spawn_prey_button_size) and not spawn_prey_pressed:
+                spawn_prey(50, agents)
+                spawn_prey_pressed = True
+        elif event.type == pygame.MOUSEBUTTONUP:
+            spawn_pred_pressed = False
+            spawn_prey_pressed = False
 
     # Update agent states
     predators = [agent for agent in agents if isinstance(agent, Predator)]
@@ -89,17 +120,12 @@ while running:
     # Update the grid for the current frame
     spatial_grid = update_agent_grid_cells(agents, GRID_COLS, GRID_ROWS, SCREEN_WIDTH, SCREEN_HEIGHT)
 
-    # Inside the main game loop in ecosystem.py
-
-    # Inside the main game loop in ecosystem.py
     for agent in agents:
         if isinstance(agent, Prey):
             agent.update(agents, predators, spatial_grid, energy_grid, GRID_COLS, GRID_ROWS)
         elif isinstance(agent, Predator):
             # If Predator update method doesn't use energy_grid, don't pass it
             agent.update(agents, prey, spatial_grid, GRID_COLS, GRID_ROWS)
-
-
 
     # SECTION 5: DRAWING
     screen.fill((255, 255, 255))  # Clear the screen with a white background
@@ -141,6 +167,10 @@ while running:
     
     # Draw reset button
     draw_button(screen, "Reset", reset_button_pos, reset_button_size, button_font, button_color, text_color)
+
+    # Draw spawn buttons and make sure they are redrawn every frame
+    draw_button(screen, "Spawn Preds", spawn_pred_button_pos, spawn_pred_button_size, button_font, button_color, text_color)
+    draw_button(screen, "Spawn Prey", spawn_prey_button_pos, spawn_prey_button_size, button_font, button_color, text_color)
 
     #Clock?
     pygame.display.flip()
