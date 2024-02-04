@@ -33,10 +33,10 @@ TURN_ANGLE = math.pi / 8  # 22.5 degrees in radians
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 PREY_ENERGY_GAIN = 200
-PREDATOR_ENERGY_GAIN = 100
-ENERGY_TO_REPRODUCE = 800
-PREY_ENERGY_TO_REPRODUCE = 600  # Adjust this value as needed
-MAX_ENERGY = 800
+PREDATOR_ENERGY_GAIN = 200
+ENERGY_TO_REPRODUCE = 1600
+PREY_ENERGY_TO_REPRODUCE = 1000  # Adjust this value as needed
+MAX_ENERGY = 1000
 
 
 
@@ -190,12 +190,15 @@ class Agent:
 # SECTION 4: PREY CLASS
 # ---------------------
 class Prey(Agent):
-    def __init__(self):
+    def __init__(self, color=(0, 255, 0)):  # Default color set to a specific green
         super().__init__()
-        self.nn = NeuralNetwork(input_size=3, hidden_size=5, output_size=2)  # Example sizes
+        self.nn = NeuralNetwork(input_size=3, hidden_size=5, output_size=2)
         self.reproduction_cooldown = 100
-        self.fleeing_energy_cost = 0.5  # Higher energy cost when fleeing
-        self.safe_energy_gain = 0.5   # Energy gain when moving safely
+        self.fleeing_energy_cost = 0.5
+        self.safe_energy_gain = 0.5
+        self.color = color  # Use the passed color, default to green
+
+
 
     def get_nearest_predator_info(self, predator_list):
         """
@@ -263,17 +266,47 @@ class Prey(Agent):
         return False
 
     def reproduce(self, agent_list):
-        """ Handle reproduction process. """
         if self.energy >= PREY_ENERGY_TO_REPRODUCE:
-            self.energy /= 2
-            offspring = Prey()
-            offspring.nn = copy.deepcopy(self.nn)  # Deep copy parent's neural network
-            offspring.nn.mutate(rate=0.01)  # Small mutation rate
-            offset = random.randint(-20, 20)
-            offspring.position = (self.position[0] + offset, self.position[1] + offset)
-            offspring.grid_cell = get_grid_cell(offspring.position)
-            agent_list.append(offspring)
-            self.reproduction_cooldown = 100
+            self.energy /= 2  # Halve the energy of the parent
+            offspring = Prey(color=self.color)  # Start with the parent's color
+
+            # Mutation chance applies to all mutations, including neural network and color
+            MUTATION_CHANCE = 0.5  # 10% chance for any mutation
+            if random.random() < MUTATION_CHANCE:
+                # Apply neural network mutation
+                offspring.nn = copy.deepcopy(self.nn)
+                offspring.nn.mutate(rate=0.01)
+                
+                # Apply color mutation
+                offspring.color = self.mutate_color()
+                #print(f"New Offspring Color: {offspring.color}")  # Print after mutation
+
+            else:
+                #print("No mutation this time.")  # Indicate when there's no mutation
+
+                # Position the offspring near the parent
+                offset = random.randint(-20, 20)
+                offspring.position = (self.position[0] + offset, self.position[1] + offset)
+                offspring.grid_cell = get_grid_cell(offspring.position)
+                
+                agent_list.append(offspring)  # Add the new offspring to the agent list
+                self.reproduction_cooldown = 100  # Reset the reproduction cooldown
+
+
+    def mutate_color(self):
+        """
+        Mutate the color slightly from the parent's color.
+        This changes each RGB component by a small amount, within a safe range.
+        """
+        shift = lambda x: max(0, min(255, x + random.randint(-50, 50)))  # Shift within [-10, 10] range
+        return tuple(shift(c) for c in self.color)  # Apply the shift to each RGB component
+
+
+    @staticmethod
+    def random_color():
+        # Generates a random color within a reasonable range
+        return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
 
 
 # GRID EATING SHENANINGANS WHERE THE PREY MUNCH OUT ENERGY FROM THE GRID
@@ -304,16 +337,17 @@ class Prey(Agent):
                     self.direction += math.pi
                     self.move(energy_grid)  # Move and consume energy from the grid
 
-
 # SECTION 5: PREDATOR CLASS
 # -------------------------
 class Predator(Agent):
-    def __init__(self):
+    def __init__(self, color=(255, 0, 0)):  # Default color set to a specific red
         super().__init__()
-        self.nn = NeuralNetwork(input_size=3, hidden_size=5, output_size=2)  # Example sizes
+        self.nn = NeuralNetwork(input_size=3, hidden_size=5, output_size=2)
         self.energy = 100  # Starting energy for predator
         self.reproduction_cooldown = 0  # Initialize reproduction cooldown
         self.eating_cooldown = 0  # Cooldown after eating prey
+        self.color = color  # Use the passed color, default to red
+        print(f"[Init] Predator initialized with color: {self.color}")
 
     def get_nearest_prey_info(self, prey_list):
         if not prey_list:
@@ -365,7 +399,7 @@ class Predator(Agent):
                 self.eating_cooldown = 30
 
         # Movement and energy depletion
-        self.energy -= 0.7  # Energy depletion rate for moving
+        self.energy -= 1  # Energy depletion rate for moving
         self.energy = max(self.energy, 0)  # Prevent negative energy
         self.move()
 
@@ -385,16 +419,38 @@ class Predator(Agent):
         self.handle_collision([a for a in agent_list if isinstance(a, Predator)])
         self.handle_collision_efficiently(grid, grid_cols, grid_rows)
 
+    def is_close_to_reproducing(self, energy_to_reproduce):
+        glow_threshold = energy_to_reproduce * 0.5
+        return self.energy >= glow_threshold
+
+    def mutate_color(self):
+        shift = lambda x: max(0, min(255, x + random.randint(-100, 100)))  # Shift within [-10, 10] range
+        self.color = tuple(shift(c) for c in self.color)  # Apply the shift to each RGB component
+        print(f"[Mutate Color] Color after mutation: {self.color}")
+
     def reproduce(self, agent_list):
-        """ Handle reproduction process. """
         if self.energy >= ENERGY_TO_REPRODUCE:
-            self.energy = 400
-            offspring = Predator()
+            self.energy /= 2  # Halving energy for reproduction
+
+            # Create offspring Predator with parent's current color
+            offspring = Predator(color=self.color)
             offspring.nn = copy.deepcopy(self.nn)  # Deep copy parent's neural network
-            offspring.nn.mutate(rate=0.01)  # Small mutation rate for offspring
+
+            # Initialize neural network mutation flag
+            nn_mutated = False
+            
+            # 50% chance for neural network mutations
+            if random.random() < 0.5:
+                offspring.nn.mutate(rate=0.1)  # Applying mutation to offspring's neural network
+                nn_mutated = True  # Mutation occurred
+
+            # If neural network mutated, then also mutate offspring's color
+            if nn_mutated:
+                offspring.mutate_color()  # Mutate offspring's color directly
+
+            # Positioning the offspring near the parent
             offset = random.randint(-10, 10)
             offspring.position = (self.position[0] + offset, self.position[1] + offset)
             offspring.grid_cell = get_grid_cell(offspring.position)
-            agent_list.append(offspring)
-            self.reproduction_cooldown = 100  # Reset cooldown
- 
+            agent_list.append(offspring)  # Adding offspring to the agent list
+            self.reproduction_cooldown = 100  # Resetting cooldown

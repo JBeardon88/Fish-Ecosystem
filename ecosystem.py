@@ -12,8 +12,8 @@ GRID_ROWS = 15
 
 
 # Constants for GridSquare
-GRID_MAX_ENERGY = 25  # Maximum energy a grid square can hold
-GRID_REGEN_RATE = 0.5    # Rate at which energy regenerates in each square
+GRID_MAX_ENERGY = 20  # Maximum energy a grid square can hold
+GRID_REGEN_RATE = 1    # Rate at which energy regenerates in each square
 
 # Initialize the grid with GridSquares
 energy_grid = [[GridSquare(GRID_MAX_ENERGY, GRID_REGEN_RATE) for _ in range(GRID_ROWS)] for _ in range(GRID_COLS)]
@@ -49,21 +49,31 @@ spawn_prey_button_pos = (SCREEN_WIDTH - 220, 60)
 spawn_prey_button_size = (50, 20)
 
 
-
 # SECTION 3: AGENT INITIALIZATION
 # -------------------------------
 def reset_agents():
-    return [Prey() for _ in range(70)] + [Predator() for _ in range(5)]
+    # All prey start with the default green color
+    return [Prey() for _ in range(100)] + [Predator() for _ in range(5)]
 
 agents = reset_agents()
 
 # FUZZY CIRCLES
 def draw_fuzzy_circle(surface, color, position, radius):
+    if color is None:
+       # print("Error: Attempted to draw fuzzy circle with None color.")
+        return  # Optionally, set a default color or skip drawing.
+
     x, y = position
     temp_surface = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
     for i in range(radius, 0, -1):
-        alpha = int(255 * (1 - i / radius))
-        pygame.draw.circle(temp_surface, color + (alpha,), (radius, radius), i)
+        # If color includes alpha (RGBA), use it directly; otherwise, append a dynamic alpha
+        if len(color) == 4:  # Color is RGBA
+            drawn_color = color  # Use the RGBA color directly
+        else:  # Color is RGB, append a dynamically calculated alpha
+            alpha = int(255 * (1 - i / radius))
+            drawn_color = color + (alpha,)  # Append alpha to the RGB color
+
+        pygame.draw.circle(temp_surface, drawn_color, (radius, radius), i)
     surface.blit(temp_surface, (x - radius, y - radius))
 
 # Function to interpolate between two colors
@@ -146,18 +156,23 @@ while running:
             cell.regenerate_energy()
    
     # DRAW AGENTS - FUZZY CIRCLES AND EMOTIONS
-
     for agent in agents:
         if isinstance(agent, Prey):
-            color = (0, 255, 0)  # Green for prey
-            draw_fuzzy_circle(screen, color, agent.position, 5)
+            # Draw Prey with its lineage color
+            draw_fuzzy_circle(screen, agent.color, agent.position, 5)
         elif isinstance(agent, Predator):
-            # Interpolate color based on energy
-            low_energy_color = (255, 0, 0)  # Red for low energy
-            high_energy_color = (0, 0, 255)  # Blue for high energy
-            energy_factor = max(0, min(1, agent.energy / max_energy))
-            color = lerp_color(low_energy_color, high_energy_color, energy_factor)
-            draw_fuzzy_circle(screen, color, agent.position, 5)
+            #print(f"[Before Drawing] Predator color before drawing: {agent.color}")
+            # Use Predator's color for lineage
+            predator_color = agent.color  # This now directly reflects the predator's lineage
+            
+            # If the Predator is close to reproducing, draw a glow effect
+            if agent.is_close_to_reproducing(ENERGY_TO_REPRODUCE):
+                glow_color = (255, 255, 0, 128)  # Yellow glow with alpha
+                # Draw the glow effect around the Predator to indicate it's close to reproducing
+                draw_fuzzy_circle(screen, glow_color, agent.position, 10)  # Glow effect with larger radius
+            
+            # Draw the Predator with its lineage color
+            draw_fuzzy_circle(screen, predator_color, agent.position, 5)
 
     # Draw counters for predators and prey
     prey_count = len([agent for agent in agents if isinstance(agent, Prey)])
