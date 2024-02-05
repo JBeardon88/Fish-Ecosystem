@@ -12,7 +12,7 @@ GRID_ROWS = 15
 
 
 # Constants for GridSquare
-GRID_MAX_ENERGY = 20  # Maximum energy a grid square can hold
+GRID_MAX_ENERGY = 10  # Maximum energy a grid square can hold
 GRID_REGEN_RATE = 1    # Rate at which energy regenerates in each square
 
 # Initialize the grid with GridSquares
@@ -194,7 +194,17 @@ while running:
     # SECTION 6: DISPLAY REFRESH
     pygame.display.flip()
 
+    # SECTION 7 - SPAWN FRESH MEAT
+    prey_count = len([agent for agent in agents if isinstance(agent, Prey)])
+    predator_count = len([agent for agent in agents if isinstance(agent, Predator)])
 
+    if prey_count >= 100 and predator_count == 0:
+        # Spawn 5 basic predators
+        for _ in range(5):
+            agents.append(Predator())
+    elif predator_count == 3 and prey_count <= 5:
+        # Only spawn 100 basic prey if there are exactly 5 predators and 10 prey
+        for _ in range(100):
+            agents.append(Prey())
 
-# SECTION 7: QUIT PYGAME
 pygame.quit()

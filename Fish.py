@@ -34,7 +34,7 @@ SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 PREY_ENERGY_GAIN = 200
 PREDATOR_ENERGY_GAIN = 200
-ENERGY_TO_REPRODUCE = 1600
+ENERGY_TO_REPRODUCE = 2000
 PREY_ENERGY_TO_REPRODUCE = 1000  # Adjust this value as needed
 MAX_ENERGY = 1000
 
@@ -190,15 +190,28 @@ class Agent:
 # SECTION 4: PREY CLASS
 # ---------------------
 class Prey(Agent):
-    def __init__(self, color=(0, 255, 0)):  # Default color set to a specific green
+    def __init__(self, color=(0, 255, 0), fov_angle=120, fov_distance=150):
         super().__init__()
         self.nn = NeuralNetwork(input_size=3, hidden_size=5, output_size=2)
         self.reproduction_cooldown = 100
         self.fleeing_energy_cost = 0.5
         self.safe_energy_gain = 0.5
-        self.color = color  # Use the passed color, default to green
+        self.color = color
+        self.fov_angle = fov_angle
+        self.fov_distance = fov_distance
+        self.speed_boost_multiplier = 1.2
+        self.boost_energy_cost = 50
+        self.boost_cooldown = 0  # Cooldown timer for boosting
+        self.is_boosting = False  # Indicates if currently boosting
+        self.after_boost_slowdown = 0.5  # Slowdown multiplier after boosting
+        self.boost_cooldown_timer = 180  # Cooldown period after boosting
+        self.boost_energy_threshold = 0.75 * MAX_ENERGY  # Adjust MAX_ENERGY as needed
 
-
+    def detect_predators(self, predator_list):
+        for predator in predator_list:
+            if self._distance_to(predator) <= self.fov_distance:
+                return True
+        return False
 
     def get_nearest_predator_info(self, predator_list):
         """
@@ -220,9 +233,15 @@ class Prey(Agent):
 
         return (distance, angle)
 
+
+
     # In the Prey class
     def update(self, agent_list, predator_list, spatial_grid, energy_grid, grid_cols, grid_rows):
-        # Retrieve nearby predators using spatial partitioning
+        # Determine if predators are nearby and update self.predator_nearby accordingly
+        self.predator_nearby = self.detect_predators(predator_list)
+        self.move(energy_grid)  # Corrected to match the move method's definition
+
+
         current_cell = self.grid_cell  # or however you get the current cell
         nearby_cells = get_nearby_cells(self.grid_cell, grid_cols, grid_rows)
         nearby_predators = [pred for cell in nearby_cells for pred in spatial_grid.get(cell, []) if isinstance(pred, Predator)]
@@ -234,6 +253,11 @@ class Prey(Agent):
         distance, angle = self.get_nearest_predator_info(predator_list)
         energy = self.energy
 
+        # Existing logic to calculate nearest predator info...
+        distance, angle = self.get_nearest_predator_info(predator_list)
+        predator_nearby = distance < 1.0  # Assuming normalized distance, adjust this condition as needed
+    
+
         # Normalize inputs
         normalized_inputs = [distance / MAX_DISTANCE, angle / math.pi, energy / MAX_ENERGY]
 
@@ -244,7 +268,15 @@ class Prey(Agent):
         self.direction += decision[0] * TURN_ANGLE - TURN_ANGLE / 2  # Adjust direction
         self.velocity = decision[1] * MAX_SPEED       
 
+        # Adjust the call to move
         self.move(energy_grid)
+
+                # Decrease cooldown timer if active
+        if self.boost_cooldown > 0:
+            self.boost_cooldown -= 1
+
+        #super().update(agent_list, predator_list, spatial_grid, energy_grid, grid_cols, grid_rows)
+        # More logic can follow here
 
         # Handle reproduction
         if self.reproduction_cooldown > 0:
@@ -252,9 +284,12 @@ class Prey(Agent):
         elif self.energy >= PREY_ENERGY_TO_REPRODUCE:
             self.reproduce(agent_list)
 
-        # Collision handling
-        self.handle_collision([a for a in agent_list if isinstance(a, Prey)], energy_grid)
-        self.handle_collision_efficiently(spatial_grid, grid_cols, grid_rows, energy_grid)
+    def handle_collision(self, same_type_agents, energy_grid):
+        for other_agent in same_type_agents:
+            if self != other_agent and self._distance_to(other_agent) < collision_distance:
+                self.direction += math.pi  # Reverse direction
+                self.move(energy_grid)  # Use class attribute directly
+
 
 
     def is_in_deadlock(self, predator_list):
@@ -267,40 +302,34 @@ class Prey(Agent):
 
     def reproduce(self, agent_list):
         if self.energy >= PREY_ENERGY_TO_REPRODUCE:
-            self.energy /= 2  # Halve the energy of the parent
-            offspring = Prey(color=self.color)  # Start with the parent's color
+            self.energy /= 2
+            offspring = Prey(color=self.color, fov_angle=self.fov_angle, fov_distance=self.fov_distance)
 
-            # Mutation chance applies to all mutations, including neural network and color
-            MUTATION_CHANCE = 0.5  # 10% chance for any mutation
+            MUTATION_CHANCE = 0.5
             if random.random() < MUTATION_CHANCE:
-                # Apply neural network mutation
                 offspring.nn = copy.deepcopy(self.nn)
-                offspring.nn.mutate(rate=0.01)
-                
-                # Apply color mutation
+                offspring.nn.mutate(rate=0.1)
                 offspring.color = self.mutate_color()
-                #print(f"New Offspring Color: {offspring.color}")  # Print after mutation
+                offspring.fov_angle = self.mutate_fov_angle()
+                offspring.fov_distance = self.mutate_fov_distance()
 
-            else:
-                #print("No mutation this time.")  # Indicate when there's no mutation
+            offset = random.randint(-20, 20)
+            offspring.position = (self.position[0] + offset, self.position[1] + offset)
+            offspring.grid_cell = get_grid_cell(offspring.position)
+            agent_list.append(offspring)
+            self.reproduction_cooldown = 100
 
-                # Position the offspring near the parent
-                offset = random.randint(-20, 20)
-                offspring.position = (self.position[0] + offset, self.position[1] + offset)
-                offspring.grid_cell = get_grid_cell(offspring.position)
-                
-                agent_list.append(offspring)  # Add the new offspring to the agent list
-                self.reproduction_cooldown = 100  # Reset the reproduction cooldown
+    def mutate_fov_angle(self):
+        # Adjust the mutation range as needed
+        return max(60, min(180, self.fov_angle + random.randint(-15, 15)))
 
+    def mutate_fov_distance(self):
+        # Adjust the mutation range as needed
+        return max(50, self.fov_distance + random.randint(-10, 10))
 
     def mutate_color(self):
-        """
-        Mutate the color slightly from the parent's color.
-        This changes each RGB component by a small amount, within a safe range.
-        """
-        shift = lambda x: max(0, min(255, x + random.randint(-50, 50)))  # Shift within [-10, 10] range
-        return tuple(shift(c) for c in self.color)  # Apply the shift to each RGB component
-
+        shift = lambda x: max(0, min(255, x + random.randint(-50, 50)))
+        return tuple(shift(c) for c in self.color)
 
     @staticmethod
     def random_color():
@@ -312,12 +341,33 @@ class Prey(Agent):
 # GRID EATING SHENANINGANS WHERE THE PREY MUNCH OUT ENERGY FROM THE GRID
 
     def move(self, energy_grid):
+        original_velocity = self.velocity
+        
+        # Apply speed boost if not on cooldown and conditions are met
+        if self.energy > self.boost_energy_threshold and self.predator_nearby and self.boost_cooldown == 0:
+            self.velocity *= self.speed_boost_multiplier
+            self.energy -= self.boost_energy_cost
+            self.boost_cooldown = self.boost_cooldown_timer  # Start cooldown
+            self.is_boosting = True
+            # print(f"Boosting! Energy: {self.energy}, Velocity: {self.velocity}")
+        elif self.boost_cooldown > 0 and not self.is_boosting:
+            # Apply slowdown if in cooldown but not currently boosting
+            self.velocity *= self.after_boost_slowdown
+
         super().move()
+        
+        # Reset velocity to original if it was boosted or slowed, ensuring it's always defined
+        self.velocity = original_velocity
+        
+        # Handle energy grid consumption and cooldown logic
         col, row = get_grid_cell(self.position)
-        # Make sure col and row are within grid range
         if 0 <= col < GRID_COLS and 0 <= row < GRID_ROWS:
             self.energy += energy_grid[col][row].consume_energy(PREY_ENERGY_GAIN)
         self.energy = min(self.energy, MAX_ENERGY)
+        
+        # If was boosting on this move, reset is_boosting for next move
+        if self.is_boosting:
+            self.is_boosting = False
 
     # Move the grid arguments correctly? The robot made me do it. 
     def handle_collision(self, same_type_agents, energy_grid, collision_distance=5):
@@ -340,27 +390,42 @@ class Prey(Agent):
 # SECTION 5: PREDATOR CLASS
 # -------------------------
 class Predator(Agent):
-    def __init__(self, color=(255, 0, 0)):  # Default color set to a specific red
+    def __init__(self, color=(255, 0, 0), fov_angle=90, fov_distance=200):  # Default FOV set to 90 degrees and 100 units distance
         super().__init__()
         self.nn = NeuralNetwork(input_size=3, hidden_size=5, output_size=2)
-        self.energy = 100  # Starting energy for predator
-        self.reproduction_cooldown = 0  # Initialize reproduction cooldown
-        self.eating_cooldown = 0  # Cooldown after eating prey
-        self.color = color  # Use the passed color, default to red
-        print(f"[Init] Predator initialized with color: {self.color}")
+        self.energy = 100
+        self.reproduction_cooldown = 0
+        self.eating_cooldown = 0
+        self.color = color
+        self.fov_angle = fov_angle  # Field of View angle in degrees
+        self.fov_distance = fov_distance  # Field of View distance
 
     def get_nearest_prey_info(self, prey_list):
-        if not prey_list:
-            return (1, 0)  # No prey in sight
+        detectable_prey = [prey for prey in prey_list if self.is_within_fov(prey)]
+        if not detectable_prey:
+            return (1, 0)  # No detectable prey in sight
 
-        closest_prey = min(prey_list, key=lambda p: self._distance_to(p))
-        distance = self._distance_to(closest_prey) / MAX_DISTANCE  # Normalize distance
+        closest_prey = min(detectable_prey, key=lambda p: self._distance_to(p))
+        distance = self._distance_to(closest_prey) / MAX_DISTANCE
         angle_to_prey = math.atan2(closest_prey.position[1] - self.position[1],
                                    closest_prey.position[0] - self.position[0])
         angle_diff = self.angle_diff(self.direction, angle_to_prey)
-        angle = angle_diff / math.pi  # Normalize angle
+        angle = angle_diff / math.pi
 
         return (distance, angle)
+
+    def is_within_fov(self, prey):
+        distance = self._distance_to(prey)
+        if distance > self.fov_distance:
+            return False
+
+        angle_to_prey = math.atan2(prey.position[1] - self.position[1],
+                                   prey.position[0] - self.position[0])
+        relative_angle = abs(self.angle_diff(self.direction, angle_to_prey))
+        if relative_angle > math.radians(self.fov_angle / 2):
+            return False
+
+        return True
 
     def update(self, agent_list, prey_list, grid, grid_cols, grid_rows):
         # Optimized retrieval of nearby prey
@@ -426,31 +491,40 @@ class Predator(Agent):
     def mutate_color(self):
         shift = lambda x: max(0, min(255, x + random.randint(-100, 100)))  # Shift within [-10, 10] range
         self.color = tuple(shift(c) for c in self.color)  # Apply the shift to each RGB component
-        print(f"[Mutate Color] Color after mutation: {self.color}")
+     #   print(f"[Mutate Color] Color after mutation: {self.color}")
+
+    # ... rest of the existing methods ...
 
     def reproduce(self, agent_list):
         if self.energy >= ENERGY_TO_REPRODUCE:
-            self.energy /= 2  # Halving energy for reproduction
+            self.energy /= 2
+            offspring = Predator(color=self.color, fov_angle=self.fov_angle, fov_distance=self.fov_distance)
+            offspring.nn = copy.deepcopy(self.nn)
 
-            # Create offspring Predator with parent's current color
-            offspring = Predator(color=self.color)
-            offspring.nn = copy.deepcopy(self.nn)  # Deep copy parent's neural network
-
-            # Initialize neural network mutation flag
-            nn_mutated = False
-            
-            # 50% chance for neural network mutations
-            if random.random() < 0.5:
-                offspring.nn.mutate(rate=0.1)  # Applying mutation to offspring's neural network
-                nn_mutated = True  # Mutation occurred
-
-            # If neural network mutated, then also mutate offspring's color
+            # Neural network mutation flag
+            nn_mutated = random.random() < 0.5
             if nn_mutated:
-                offspring.mutate_color()  # Mutate offspring's color directly
+                #print(f"Before Mutation: Color: {offspring.color}, FOV Angle: {offspring.fov_angle}, FOV Distance: {offspring.fov_distance}")
+                offspring.nn.mutate(rate=0.1)
+                offspring.color = self.mutate_color()
+                # Directly call mutate_fov() on the offspring to adjust both FOV angle and distance
+                offspring.mutate_fov()
+                #print(f"After Mutation: Color: {offspring.color}, FOV Angle: {offspring.fov_angle}, FOV Distance: {offspring.fov_distance}")
 
-            # Positioning the offspring near the parent
+            # Positioning the offspring
             offset = random.randint(-10, 10)
             offspring.position = (self.position[0] + offset, self.position[1] + offset)
             offspring.grid_cell = get_grid_cell(offspring.position)
-            agent_list.append(offspring)  # Adding offspring to the agent list
-            self.reproduction_cooldown = 100  # Resetting cooldown
+            agent_list.append(offspring)
+            self.reproduction_cooldown = 100
+
+    def mutate_fov(self):
+        # Determine the change magnitude (positive or negative)
+        change = random.randint(-20, 20)  # Adjust the range as needed for your simulation
+        self.fov_distance += change
+        self.fov_angle -= change
+
+    def mutate_color(self):
+        new_color = tuple(max(0, min(255, c + random.randint(-50, 50))) for c in self.color)
+        #print(f"Old Color: {self.color}, New Color: {new_color}")  # Debug print
+        return new_color
