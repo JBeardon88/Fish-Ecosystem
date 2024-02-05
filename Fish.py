@@ -33,10 +33,10 @@ TURN_ANGLE = math.pi / 8  # 22.5 degrees in radians
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 PREY_ENERGY_GAIN = 200
-PREDATOR_ENERGY_GAIN = 200
-ENERGY_TO_REPRODUCE = 2000
+PREDATOR_ENERGY_GAIN = 250
+ENERGY_TO_REPRODUCE = 1000
 PREY_ENERGY_TO_REPRODUCE = 1000  # Adjust this value as needed
-MAX_ENERGY = 1000
+MAX_ENERGY = 1200
 
 
 
@@ -190,7 +190,7 @@ class Agent:
 # SECTION 4: PREY CLASS
 # ---------------------
 class Prey(Agent):
-    def __init__(self, color=(0, 255, 0), fov_angle=120, fov_distance=150):
+    def __init__(self, color=(0, 255, 0), fov_angle=120, fov_distance=400):
         super().__init__()
         self.nn = NeuralNetwork(input_size=3, hidden_size=5, output_size=2)
         self.reproduction_cooldown = 100
@@ -200,7 +200,7 @@ class Prey(Agent):
         self.fov_angle = fov_angle
         self.fov_distance = fov_distance
         self.speed_boost_multiplier = 1.2
-        self.boost_energy_cost = 50
+        self.boost_energy_cost = 100
         self.boost_cooldown = 0  # Cooldown timer for boosting
         self.is_boosting = False  # Indicates if currently boosting
         self.after_boost_slowdown = 0.5  # Slowdown multiplier after boosting
@@ -282,6 +282,7 @@ class Prey(Agent):
         if self.reproduction_cooldown > 0:
             self.reproduction_cooldown -= 1
         elif self.energy >= PREY_ENERGY_TO_REPRODUCE:
+            #print(f"Prey ready for reproduction. Energy: {self.energy}")
             self.reproduce(agent_list)
 
     def handle_collision(self, same_type_agents, energy_grid):
@@ -312,6 +313,7 @@ class Prey(Agent):
                 offspring.color = self.mutate_color()
                 offspring.fov_angle = self.mutate_fov_angle()
                 offspring.fov_distance = self.mutate_fov_distance()
+                #print(f"[Mutate Color] Color after mutation: {self.color}")
 
             offset = random.randint(-20, 20)
             offspring.position = (self.position[0] + offset, self.position[1] + offset)
@@ -330,6 +332,7 @@ class Prey(Agent):
     def mutate_color(self):
         shift = lambda x: max(0, min(255, x + random.randint(-50, 50)))
         return tuple(shift(c) for c in self.color)
+    
 
     @staticmethod
     def random_color():
@@ -390,16 +393,37 @@ class Prey(Agent):
 # SECTION 5: PREDATOR CLASS
 # -------------------------
 class Predator(Agent):
-    def __init__(self, color=(255, 0, 0), fov_angle=90, fov_distance=200):  # Default FOV set to 90 degrees and 100 units distance
+    def __init__(self, color=(255, 0, 0), fov_angle=45, fov_distance=1000):
         super().__init__()
         self.nn = NeuralNetwork(input_size=3, hidden_size=5, output_size=2)
         self.energy = 100
         self.reproduction_cooldown = 0
         self.eating_cooldown = 0
         self.color = color
-        self.fov_angle = fov_angle  # Field of View angle in degrees
-        self.fov_distance = fov_distance  # Field of View distance
+        self.fov_angle = fov_angle
+        self.fov_distance = fov_distance
+        self.max_velocity = 2  # Adjusted maximum speed to 2 times the minimum speed
+        self.energy_consumption_rate = 1  # Base energy consumption rate for minimum speed
 
+    def move(self):
+        dx = math.cos(self.direction) * self.velocity
+        dy = math.sin(self.direction) * self.velocity
+        self.position = (max(0, min(SCREEN_WIDTH, self.position[0] + dx)),
+                         max(0, min(SCREEN_HEIGHT, self.position[1] + dy)))
+
+        # Ensure minimum velocity of 1
+        self.velocity = max(1, min(self.velocity, self.max_velocity))
+
+        # Dynamic energy consumption based on velocity
+        if self.velocity == self.max_velocity:  # If moving at maximum speed
+            self.energy -= 2 * self.energy_consumption_rate  # Consuming double energy
+        else:
+            self.energy -= self.energy_consumption_rate  # Consuming base energy for speeds >= 1 and <= max_velocity
+
+        self.grid_cell = get_grid_cell(self.position)  # Update grid cell position
+        self.energy = max(self.energy, 0)  # Ensure energy doesn't go negative
+
+    # Other methods remain unchanged
     def get_nearest_prey_info(self, prey_list):
         detectable_prey = [prey for prey in prey_list if self.is_within_fov(prey)]
         if not detectable_prey:
@@ -447,6 +471,10 @@ class Predator(Agent):
         self.direction += decision[0] * TURN_ANGLE - TURN_ANGLE / 2  # Adjust direction
         self.velocity = decision[1] * MAX_SPEED
 
+        
+        # print(f"NN Decision - Direction: {decision[0]}, Velocity: {self.velocity}")
+
+
         if nearby_prey:
             closest_prey = min(nearby_prey, key=lambda p: self._distance_to(p))
             self.direction = math.atan2(closest_prey.position[1] - self.position[1],
@@ -464,7 +492,7 @@ class Predator(Agent):
                 self.eating_cooldown = 30
 
         # Movement and energy depletion
-        self.energy -= 1  # Energy depletion rate for moving
+        #self.energy -= .5  # Energy depletion rate for moving
         self.energy = max(self.energy, 0)  # Prevent negative energy
         self.move()
 
@@ -505,7 +533,7 @@ class Predator(Agent):
             nn_mutated = random.random() < 0.5
             if nn_mutated:
                 #print(f"Before Mutation: Color: {offspring.color}, FOV Angle: {offspring.fov_angle}, FOV Distance: {offspring.fov_distance}")
-                offspring.nn.mutate(rate=0.1)
+                offspring.nn.mutate(rate=0.2)
                 offspring.color = self.mutate_color()
                 # Directly call mutate_fov() on the offspring to adjust both FOV angle and distance
                 offspring.mutate_fov()
@@ -520,11 +548,11 @@ class Predator(Agent):
 
     def mutate_fov(self):
         # Determine the change magnitude (positive or negative)
-        change = random.randint(-20, 20)  # Adjust the range as needed for your simulation
+        change = random.randint(-30, 30)  # Adjust the range as needed for your simulation
         self.fov_distance += change
         self.fov_angle -= change
 
     def mutate_color(self):
-        new_color = tuple(max(0, min(255, c + random.randint(-50, 50))) for c in self.color)
+        new_color = tuple(max(0, min(255, c + random.randint(-100, 100))) for c in self.color)
         #print(f"Old Color: {self.color}, New Color: {new_color}")  # Debug print
         return new_color

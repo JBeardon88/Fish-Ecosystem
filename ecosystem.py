@@ -202,7 +202,7 @@ while running:
         # Spawn 5 basic predators
         for _ in range(5):
             agents.append(Predator())
-    elif predator_count == 3 and prey_count <= 5:
+    elif predator_count == 3 and prey_count <= 10:
         # Only spawn 100 basic prey if there are exactly 5 predators and 10 prey
         for _ in range(100):
             agents.append(Prey())
