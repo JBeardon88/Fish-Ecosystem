@@ -33,7 +33,7 @@ TURN_ANGLE = math.pi / 8  # 22.5 degrees in radians
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 PREY_ENERGY_GAIN = 200
-PREDATOR_ENERGY_GAIN = 250
+PREDATOR_ENERGY_GAIN = 100
 ENERGY_TO_REPRODUCE = 1000
 PREY_ENERGY_TO_REPRODUCE = 1000  # Adjust this value as needed
 MAX_ENERGY = 1200
@@ -403,7 +403,7 @@ class Predator(Agent):
         self.fov_angle = fov_angle
         self.fov_distance = fov_distance
         self.max_velocity = 2  # Adjusted maximum speed to 2 times the minimum speed
-        self.energy_consumption_rate = 1  # Base energy consumption rate for minimum speed
+        self.energy_consumption_rate = .7  # Base energy consumption rate for minimum speed
 
     def move(self):
         dx = math.cos(self.direction) * self.velocity
@@ -553,6 +553,6 @@ class Predator(Agent):
         self.fov_angle -= change
 
     def mutate_color(self):
-        new_color = tuple(max(0, min(255, c + random.randint(-100, 100))) for c in self.color)
+        new_color = tuple(max(0, min(255, c + random.randint(-50, 50))) for c in self.color)
         #print(f"Old Color: {self.color}, New Color: {new_color}")  # Debug print
         return new_color
